@@ -1,0 +1,170 @@
+name: install-kubepug
+description: 'Install Kubepug and put it on your path'
+branding:
+  icon: 'package'
+  color: 'blue'
+
+inputs:
+  kubepug-release:
+    description: 'Kubepug release version to use in the actions.'
+    required: false
+    default: '1.7.1'
+  install-dir:
+    description: 'Where to install the Kubepug binary'
+    required: false
+    default: '$HOME/.kubepug'
+  use-sudo:
+    description: 'set to true if install-dir location requires sudo privs'
+    required: false
+    default: 'false'
+runs:
+  using: "composite"
+  steps:
+    - name: validate subscription
+      run: |
+        # validate subscription status
+        API_URL="https://agent.api.stepsecurity.io/v1/github/$GITHUB_REPOSITORY/actions/subscription"
+
+        # Set a timeout for the curl command (3 seconds)
+        RESPONSE=$(curl --max-time 3 -s -w "%{http_code}" "$API_URL" -o /dev/null) || true
+        CURL_EXIT_CODE=$?
+
+        # Decide based on curl exit code and HTTP status
+        if [ $CURL_EXIT_CODE -ne 0 ]; then
+          echo "Timeout or API not reachable. Continuing to next step."
+        elif [ "$RESPONSE" = "200" ]; then
+          :
+        elif [ "$RESPONSE" = "403" ]; then
+          echo "Subscription is not valid. Reach out to support@stepsecurity.io"
+          exit 1
+        else
+          echo "Timeout or API not reachable. Continuing to next step."
+        fi
+      shell: bash
+
+    - uses: sigstore/cosign-installer@d58896d6a1865668819e1d91763c7751a165e159 # v3.9.2
+      with:
+        install-dir: ${{ inputs.install-dir }}
+        use-sudo: ${{ inputs.use-sudo }}
+    - shell: bash
+      run: |
+        #!/bin/bash
+        # bom install script
+        shopt -s expand_aliases
+        if [ -z "$NO_COLOR" ]; then
+          alias log_info="echo -e \"\033[1;32mINFO\033[0m:\""
+          alias log_error="echo -e \"\033[1;31mERROR\033[0m:\""
+        else
+          alias log_info="echo \"INFO:\""
+          alias log_error="echo \"ERROR:\""
+        fi
+        set -e
+
+        mkdir -p ${{ inputs.install-dir }}
+
+        trap "popd >/dev/null" EXIT
+
+        pushd ${{ inputs.install-dir }} > /dev/null
+        bom_executable_name='bom'
+        case ${{ runner.os }} in
+          Linux)
+            case ${{ runner.arch }} in
+              X64)
+                desired_kubepug_filename='kubepug_linux_amd64.tar.gz'
+                ;;
+
+              ARM)
+                desired_kubepug_filename='kubepug_linux_arm.tar.gz'
+                ;;
+
+              ARM64)
+                desired_kubepug_filename='kubepug_linux_arm64.tar.gz'
+                ;;
+
+              *)
+                log_error "unsupported architecture $arch"
+                exit 1
+                ;;
+            esac
+            ;;
+
+          macOS)
+            case ${{ runner.arch }} in
+              X64)
+                desired_kubepug_filename='kubepug_darwin_amd64.tar.gz'
+                ;;
+
+              ARM64)
+                desired_kubepug_filename='kubepug_darwin_arm64.tar.gz'
+                ;;
+
+              *)
+                log_error "unsupported architecture $arch"
+                exit 1
+                ;;
+            esac
+            ;;
+
+          Windows)
+            case ${{ runner.arch }} in
+              X64)
+                desired_kubepug_filename='kubepug_windows_amd64.zip'
+                bom_executable_name=bom.exe
+                ;;
+              *)
+                log_error "unsupported architecture $arch"
+                exit 1
+                ;;
+            esac
+            ;;
+          *)
+            log_error "unsupported architecture $arch"
+            exit 1
+            ;;
+        esac
+
+        SUDO=
+        if "${{ inputs.use-sudo }}" == "true" && command -v sudo >/dev/null; then
+          SUDO=sudo
+        fi
+
+        semver='^([0-9]+\.){0,2}(\*|[0-9]+)$'
+        if [[ ${{ inputs.kubepug-release }} =~ $semver ]]; then
+          log_info "Custom bom version '${{ inputs.kubepug-release }}' requested"
+        else
+          log_error "Unable to validate requested bom version: '${{ inputs.kubepug-release }}'"
+          exit 1
+        fi
+
+        # Download custom bom
+        log_info "Downloading platform-specific version '${{ inputs.kubepug-release }}' of Kubepug...\n      https://github.com/kubepug/kubepug/releases/download/v${{ inputs.kubepug-release }}/${desired_kubepug_filename}"
+        $SUDO curl -sL https://github.com/kubepug/kubepug/releases/download/v${{ inputs.kubepug-release }}/${desired_kubepug_filename} -o ${desired_kubepug_filename}
+
+        KUBEPUG_CERT=https://github.com/kubepug/kubepug/releases/download/v${{ inputs.kubepug-release }}/${desired_kubepug_filename}.pem
+        KUBEPUG_SIG=https://github.com/kubepug/kubepug/releases/download/v${{ inputs.kubepug-release }}/${desired_kubepug_filename}.sig
+
+        log_info "Using cosign to verify signature of desired kubepug version"
+        cosign verify-blob --certificate $KUBEPUG_CERT --signature $KUBEPUG_SIG \
+          --certificate-identity "https://github.com/kubepug/kubepug/.github/workflows/release.yaml@refs/tags/v${{ inputs.kubepug-release }}" \
+          --certificate-oidc-issuer "https://token.actions.githubusercontent.com" ${desired_kubepug_filename}
+        retVal=$?
+        if [[ $retVal -eq 0 ]]; then
+          if [[ ${desired_kubepug_filename} == *".zip"*  ]]; then
+            7z x ${desired_kubepug_filename}
+          else
+            $SUDO tar -zxvf ${desired_kubepug_filename}
+          fi
+          $SUDO chmod +x kubepug
+          $SUDO rm -f kubepug_*
+          log_info "Installation complete!"
+        else
+          log_error "Unable to validate bom version: '${{ inputs.kubepug-release }}'"
+          exit 1
+        fi
+
+    - if: ${{ runner.os == 'Linux' || runner.os == 'macOS' }}
+      run: echo "${{ inputs.install-dir }}" >> $GITHUB_PATH
+      shell: bash
+    - if: ${{ runner.os == 'Windows' }}
+      run: echo "${{ inputs.install-dir }}" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      shell: pwsh

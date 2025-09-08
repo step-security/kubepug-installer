@@ -1,0 +1,93 @@
+name: test-kubepug
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test_kubepug_action:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os:
+          - macos-latest
+          - ubuntu-latest
+          - windows-latest
+    permissions: {}
+    name: Install kubepug and test presence in path
+    steps:
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+    - name: Install kubepug
+      uses: ./
+    - name: Check install!
+      run: kubepug version
+    - name: Check root directory
+      run: |
+        if [[ $(git diff --stat) != '' ]]; then
+          echo 'should be clean'
+          exit 1
+        else
+          exit 0
+        fi
+      shell: bash
+
+  test_kubepug_action_custom_dir_root:
+    runs-on: ubuntu-latest
+    permissions: {}
+    name: Install Custom kubepug and test presence in path with custom root dir
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install kubepug
+        uses: ./
+        with:
+          install-dir: /usr/bin
+          use-sudo: true
+      - name: Check install!
+        run: kubepug version
+      - name: Check install dir!
+        run: |
+          [[ $(dirname "$(which kubepug)") == /usr/bin ]]
+        shell: bash
+      - name: Check root directory
+        run: |
+          [[ -z $(git diff --stat) ]]
+        shell: bash
+
+  test_kubepug_actionn_custom_dir:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os:
+          - macos-latest
+          - ubuntu-latest
+          - windows-latest
+    permissions: {}
+    name: Install Custom path kubepug and test presence in path
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Install kubepug
+        uses: ./
+        with:
+          install-dir: "$HOME/.kubepugtest"
+      - name: Check install!
+        run: kubepug version
+      - name: Check install dir!
+        run: |
+          [[ $(dirname "$(which kubepug)") == "$HOME/.kubepugtest" ]]
+        shell: bash
+      - name: Check root directory
+        run: |
+          [[ -z $(git diff --stat) ]]
+        shell: bash
+
+  test_kubepug_action_wrong:
+    runs-on: ubuntu-latest
+    permissions: {}
+    name: Try to install a wrong kubepug
+    steps:
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+    - name: Install kubepug
+      uses: ./
+      with:
+        kubepug-release: 'honk'
+      continue-on-error: true
