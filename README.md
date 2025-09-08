@@ -100,7 +100,7 @@ jobs:
 
     name: Install kubepug
     steps:
-      - uses: actions/checkout@master
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 1
 

@@ -123,9 +123,17 @@ runs:
             ;;
         esac
 
-        SUDO=
-        if "${{ inputs.use-sudo }}" == "true" && command -v sudo >/dev/null; then
-          SUDO=sudo
+        USE_SUDO_RAW='${{ inputs.use-sudo }}'  # literal template expanded by runner
+        USE_SUDO_LOWER=$(echo "$USE_SUDO_RAW" | tr '[:upper:]' '[:lower:]')
+        case "$USE_SUDO_LOWER" in
+          true)  use_sudo=true ;;
+          false) use_sudo=false ;;
+          *)     echo "use-sudo must be true or false (got: ${USE_SUDO_RAW})" >&2; exit 1 ;;
+        esac
+
+        sudo_cmd=()
+        if $use_sudo && command -v sudo >/dev/null 2>&1; then
+          sudo_cmd=(sudo)
         fi
 
         semver='^([0-9]+\.){0,2}(\*|[0-9]+)$'
@@ -138,24 +146,24 @@ runs:
 
         # Download custom bom
         log_info "Downloading platform-specific version '${{ inputs.kubepug-release }}' of Kubepug...\n      https://github.com/kubepug/kubepug/releases/download/v${{ inputs.kubepug-release }}/${desired_kubepug_filename}"
-        $SUDO curl -sL https://github.com/kubepug/kubepug/releases/download/v${{ inputs.kubepug-release }}/${desired_kubepug_filename} -o ${desired_kubepug_filename}
+        "${sudo_cmd[@]}" curl -sL "https://github.com/kubepug/kubepug/releases/download/v${{ inputs.kubepug-release }}/${desired_kubepug_filename}" -o "${desired_kubepug_filename}"
 
-        KUBEPUG_CERT=https://github.com/kubepug/kubepug/releases/download/v${{ inputs.kubepug-release }}/${desired_kubepug_filename}.pem
-        KUBEPUG_SIG=https://github.com/kubepug/kubepug/releases/download/v${{ inputs.kubepug-release }}/${desired_kubepug_filename}.sig
+        KUBEPUG_CERT="https://github.com/kubepug/kubepug/releases/download/v${{ inputs.kubepug-release }}/${desired_kubepug_filename}.pem"
+        KUBEPUG_SIG="https://github.com/kubepug/kubepug/releases/download/v${{ inputs.kubepug-release }}/${desired_kubepug_filename}.sig"
 
         log_info "Using cosign to verify signature of desired kubepug version"
-        cosign verify-blob --certificate $KUBEPUG_CERT --signature $KUBEPUG_SIG \
+        cosign verify-blob --certificate "$KUBEPUG_CERT" --signature "$KUBEPUG_SIG" \
           --certificate-identity "https://github.com/kubepug/kubepug/.github/workflows/release.yaml@refs/tags/v${{ inputs.kubepug-release }}" \
-          --certificate-oidc-issuer "https://token.actions.githubusercontent.com" ${desired_kubepug_filename}
+          --certificate-oidc-issuer "https://token.actions.githubusercontent.com" "${desired_kubepug_filename}"
         retVal=$?
         if [[ $retVal -eq 0 ]]; then
-          if [[ ${desired_kubepug_filename} == *".zip"*  ]]; then
-            7z x ${desired_kubepug_filename}
+          if [[ "${desired_kubepug_filename}" == *".zip"*  ]]; then
+            7z x "${desired_kubepug_filename}"
           else
-            $SUDO tar -zxvf ${desired_kubepug_filename}
+            "${sudo_cmd[@]}" tar -zxvf "${desired_kubepug_filename}"
           fi
-          $SUDO chmod +x kubepug
-          $SUDO rm -f kubepug_*
+          "${sudo_cmd[@]}" chmod +x kubepug
+          "${sudo_cmd[@]}" rm -f kubepug_*
           log_info "Installation complete!"
         else
           log_error "Unable to validate bom version: '${{ inputs.kubepug-release }}'"
