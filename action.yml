@@ -24,7 +24,7 @@ runs:
       env:
         REPO_PRIVATE: ${{ github.event.repository.private }}
       run: |
-        UPSTREAM="kubepug/kubepug"
+        UPSTREAM="kubepug/kubepug-installer"
         ACTION_REPO="${GITHUB_ACTION_REPOSITORY:-}"
         DOCS_URL="https://docs.stepsecurity.io/actions/stepsecurity-maintained-actions"
 
