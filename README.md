@@ -1,3 +1,5 @@
+[![StepSecurity Maintained Action](https://raw.githubusercontent.com/step-security/maintained-actions-assets/main/assets/maintained-action-banner.png)](https://docs.stepsecurity.io/actions/stepsecurity-maintained-actions)
+
 # kubepug-installer GitHub Action
 
 This action enables you to install and use [kubepug](https://github.com/kubepug/kubepug) in your GitHub action workflow.
